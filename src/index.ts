@@ -10,7 +10,7 @@ async function main() {
     }
 
     let t = new Tensor([1, 2, 3, 4,
-                        5, 6, 7, 8], [2, 4]);
+                        5, 6, 7, 8], [2, 4], "asd", "cpu");
     console.log(t);
     console.info(device)
 }
