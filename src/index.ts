@@ -1,18 +1,16 @@
-import { Tensor } from "./tensor";
+import { WGPUProvider } from "./wgpu_provider";
 
 async function main() {
-    const adapter = await navigator.gpu.requestAdapter();
-    const device = await adapter?.requestDevice();
-    
-    if (!device) {
-        console.error("Your device does not support WebGPU at the moment...");
+    const provider = new WGPUProvider();
+    const canvas = document.createElement("canvas");
+    document.body.appendChild(canvas);
+
+    if (!provider.setup(canvas)) {
+        console.error("Failed to setup WebGPU provider");
         return;
     }
 
-    let t = new Tensor([1, 2, 3, 4,
-                        5, 6, 7, 8], [2, 4], "asd", "cpu");
-    console.log(t);
-    console.info(device)
+    console.debug("WebGPU provider is ready");
 }
 
 main();

@@ -42,25 +42,25 @@ export class Tensor {
     }
 
     /**
-     * Create a new Tensor with the given length
-     * 
-     * @param lenght Length in items of the new Tensor
-     * @param shape Shape of the Tensor
-     */
+    * Create a new Tensor with the given length
+    *
+    * @param lenght Length in items of the new Tensor
+    * @param shape Shape of the Tensor
+    */
     constructor(length: number, shape: Array<number>, label?: string, device?: Device);
     /**
-     * Create a new Tensor with the given Array as value
-     * 
-     * @param items Array containing the items for this Tensor
-     * @param stride Number of columns that the Tensor contains
-     */
+    * Create a new Tensor with the given Array as value
+    *
+    * @param items Array containing the items for this Tensor
+    * @param stride Number of columns that the Tensor contains
+    */
     constructor(items: ArrayLike<number>, shape: Array<number>, label?: string, device?: Device);
     /**
-     * Create a new Tensor with the given Iterable object as value
-     * 
-     * @param items Iterable object containing the items for this Tensor
-     * @param stride Number of columns that the Tensor contains
-     */
+    * Create a new Tensor with the given Iterable object as value
+    *
+    * @param items Iterable object containing the items for this Tensor
+    * @param stride Number of columns that the Tensor contains
+    */
     constructor(items: Iterable<number>, shape: Array<number>, label?: string, device?: Device);
 
     constructor(e: Iterable<number> | ArrayLike<number> | number, shape: Array<number>, label: string = "", device: Device = "cpu") {
@@ -86,21 +86,36 @@ export class Tensor {
         }
     }
 
+    /**
+    * Return the number at the given position RxC
+    *
+    * @param i Row of the tensor that is being accessed
+    * @param j Column of the tensor that is being accessed
+    */
     at(i: number, j: number): number {
         return this._data[(i * this._shape[1]) + j];
     }
 
     /**
-     * Multiply a Tensor by a scalar.
-     * 
-     * @param scalar Scalar to mul to the Tensor elements
-     */
+    * Set the number of the position given RxC
+    *
+    * @param 
+    */
+    set(i: number, j: number, value: number): void {
+        this._data[(i * this._shape[1] + j)] = value;
+    }
+
+    /**
+    * Multiply a Tensor by a scalar.
+    * 
+    * @param scalar Scalar to mul to the Tensor elements
+    */
     mul(scalar: number): Tensor;
     /**
-     * Multiply a Tensor by another Tensor
-     * 
-     * @param tensor Other tensor to multiply against
-     */
+    * Multiply a Tensor by another Tensor
+    * 
+    * @param tensor Other tensor to multiply against
+    */
     mul(tensor: Tensor): Tensor;
 
     mul(other: number | Tensor): Tensor {
@@ -117,17 +132,17 @@ export class Tensor {
     }
 
     /**
-     * Add a Scalar to a Tensor
-     * 
-     * @param scalar Scalar to add to the Tensor elements
-     */
+    * Add a Scalar to a Tensor
+    * 
+    * @param scalar Scalar to add to the Tensor elements
+    */
     add(scalar: number): Tensor;
     /**
-     * Add a Tensor to a Tensor
-     * 
-     * @param tensor Other tensor to add
-     */
-    add(tensor: number): Tensor;
+    * Add a Tensor to a Tensor
+    * 
+    * @param tensor Other tensor to add
+    */
+    add(tensor: Tensor): Tensor;
 
     add(other: number | Tensor): Tensor {
         if (this._device == "cpu") {
@@ -138,6 +153,15 @@ export class Tensor {
                     return CPUOperations.addTensor(this, other);
             }
         }
+
+        throw new Error("TODO WGPU");
+    }
+
+    /**
+    * Apply the ReLU activation function to the Tensor
+    */
+    ReLU(): Tensor {
+        return CPUOperations.ReLU(this);
 
         throw new Error("TODO WGPU");
     }
