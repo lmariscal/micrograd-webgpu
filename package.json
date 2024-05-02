@@ -8,8 +8,5 @@
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
-  },
-  "scripts": {
-    "dev": "cp -r src/static/* out/ && bunx esbuild src/*.ts --outdir=out/js --bundle --platform=browser --format=esm --sourcemap --serve=3000 --servedir=out"
   }
 }
