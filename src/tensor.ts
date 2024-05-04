@@ -250,6 +250,39 @@ export class Tensor {
     }
 
     /**
+    * Transpose the Tensor
+    *
+    * @returns Tensor transposed
+    */
+    transpose(): Tensor {
+        if (this.device == "cpu") {
+            return CPUOperations.transpose(this);
+        }
+        else if (this.device == "wgpu") {
+            return GPUOperations.transpose(this);
+        }
+
+        throw new Error("Invalid device");
+    }
+
+    /**
+    * Raise the Tensor to the power of the exponent
+    *
+    * @param exponent Exponent to raise the Tensor to
+    * @returns Tensor with the elements raised to the exponent
+    */
+    power(exponent: number): Tensor {
+        if (this.device == "cpu") {
+            return CPUOperations.power(this, exponent);
+        }
+        else if (this.device == "wgpu") {
+            return GPUOperations.power(this, exponent);
+        }
+
+        throw new Error("Invalid device");
+    }
+
+    /**
     * Move the Tensor data to the GPU
     *
     * This function requires the WebGPU provider to be setup.

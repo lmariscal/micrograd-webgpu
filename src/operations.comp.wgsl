@@ -85,3 +85,26 @@ fn leakyReLU(
     }
     result[index] = max(0.1 * input[index], input[index]);
 }
+
+@compute @workgroup_size(8, 8)
+fn transpose(
+    @builtin(global_invocation_id) global_id: vec3u
+) {
+    let row = global_id.x;
+    let col = global_id.y;
+    if (row >= inputShape[0] || col >= inputShape[1]) {
+        return;
+    }
+    result[(col * inputShape[0]) + row] = input[(row * inputShape[1]) + col];
+}
+
+@compute @workgroup_size(8, 8)
+fn power(
+    @builtin(global_invocation_id) global_id: vec3u
+) {
+    let index = global_id.y + (global_id.x * inputShape[1]);
+    if (index >= (inputShape[0] * inputShape[1])) {
+        return;
+    }
+    result[index] = pow(input[index], other[0]);
+}

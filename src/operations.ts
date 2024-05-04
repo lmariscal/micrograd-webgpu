@@ -55,6 +55,24 @@ export class CPUOperations {
         const data = tensor.data.map((x) => x > 0 ? x : x * alpha);
         return new Tensor(data, tensor.shape);
     }
+
+    static transpose(tensor: Tensor): Tensor {
+        let dst = new Tensor(tensor.length, [tensor.shape[1], tensor.shape[0]]);
+        for (let i = 0; i < tensor.shape[0]; ++i) {
+            for (let j = 0; j < tensor.shape[1]; ++j) {
+                dst.data[j * tensor.shape[0] + i] = tensor.data[i * tensor.shape[1] + j];
+            }
+        }
+        return dst;
+    }
+
+    static power(tensor: Tensor, power: number): Tensor {
+        let dst = new Tensor(tensor.length, tensor.shape);
+        for (let i = 0; i < tensor.length; ++i) {
+            dst.data[i] = Math.pow(tensor.data[i], power);
+        }
+        return dst;
+    }
 }
 
 export class GPUOperations {
@@ -69,6 +87,8 @@ export class GPUOperations {
     static mulTensorPipeline: GPUComputePipeline | undefined;
     static ReLUPipeline: GPUComputePipeline | undefined;
     static leakyReLUPipeline: GPUComputePipeline | undefined;
+    static transposePipeline: GPUComputePipeline | undefined;
+    static powerPipeline: GPUComputePipeline | undefined;
 
     static setup(): Promise<boolean> {
         if (!WGPUProvider.device) {
@@ -211,6 +231,28 @@ export class GPUOperations {
         });
         GPUOperations.leakyReLUPipeline = leakyReLUPipeline;
 
+        // transpose pipeline
+        const transposePipeline = WGPUProvider.device.createComputePipeline({
+            label: "transpose compute pipeline",
+            compute: {
+                module: shaderModule,
+                entryPoint: "transpose"
+            },
+            layout: pipelineLayout
+        });
+        GPUOperations.transposePipeline = transposePipeline;
+
+        // power pipeline
+        const powerPipeline = WGPUProvider.device.createComputePipeline({
+            label: "power compute pipeline",
+            compute: {
+                module: shaderModule,
+                entryPoint: "power"
+            },
+            layout: pipelineLayout
+        });
+        GPUOperations.powerPipeline = powerPipeline;
+
         return Promise.resolve(true);
     }
 
@@ -352,7 +394,6 @@ export class GPUOperations {
 
         const res = new Tensor(tensor.length, tensor.shape, "wgpu");
         WGPUProvider.device!.queue.writeBuffer(GPUOperations.inputShapeBuffer!, 0, new Uint32Array(tensor.shape));
-        WGPUProvider.device!.queue.writeBuffer(GPUOperations.otherShapeBuffer!, 0, new Uint32Array([1, 1]));
 
         const bindGroup = GPUOperations.createBindGroup("ReLU", tensor, null, res.gpuBuffer);
         GPUOperations.doComputePass("ReLu", GPUOperations.ReLUPipeline!, bindGroup, tensor.shape);
@@ -371,6 +412,33 @@ export class GPUOperations {
         const alphaBuffer = GPUOperations.createScalarBuffer("leakyReLU", alpha);
         const bindGroup = GPUOperations.createBindGroup("leakyReLU", tensor, alphaBuffer, res.gpuBuffer);
         GPUOperations.doComputePass("leaky ReLU", GPUOperations.leakyReLUPipeline!, bindGroup, tensor.shape);
+        return res;
+    }
+
+    static transpose(tensor: Tensor): Tensor {
+        if (!WGPUProvider.device) {
+            throw new Error("WebGPU provider not setup");
+        }
+
+        const res = new Tensor(tensor.length, [tensor.shape[1], tensor.shape[0]], "wgpu");
+        WGPUProvider.device!.queue.writeBuffer(GPUOperations.inputShapeBuffer!, 0, new Uint32Array(tensor.shape));
+
+        const bindGroup = GPUOperations.createBindGroup("transpose", tensor, null, res.gpuBuffer);
+        GPUOperations.doComputePass("transpose", GPUOperations.transposePipeline!, bindGroup, tensor.shape);
+        return res;
+    }
+
+    static power(tensor: Tensor, power: number): Tensor {
+        if (!WGPUProvider.device) {
+            throw new Error("WebGPU provider not setup");
+        }
+
+        const res = new Tensor(tensor.length, tensor.shape, "wgpu");
+        WGPUProvider.device!.queue.writeBuffer(GPUOperations.inputShapeBuffer!, 0, new Uint32Array(tensor.shape));
+
+        const powerBuffer = GPUOperations.createScalarBuffer("power", power);
+        const bindGroup = GPUOperations.createBindGroup("power", tensor, powerBuffer, res.gpuBuffer);
+        GPUOperations.doComputePass("power", GPUOperations.powerPipeline!, bindGroup, tensor.shape);
         return res;
     }
 }
