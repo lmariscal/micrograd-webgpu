@@ -62,6 +62,7 @@ export class GPUOperations {
     static inputShapeBuffer: GPUBuffer | undefined;
     static otherShapeBuffer: GPUBuffer | undefined;
     static bindGroupLayout: GPUBindGroupLayout | undefined;
+
     static addScalarPipeline: GPUComputePipeline | undefined;
     static addTensorPipeline: GPUComputePipeline | undefined;
     static mulScalarPipeline: GPUComputePipeline | undefined;
@@ -254,12 +255,15 @@ export class GPUOperations {
         return bindGroup;
     }
 
-    private static doComputePass(pipeline: GPUComputePipeline, bindGroup: GPUBindGroup, workgroupsSize: Array<number>): void {
+    private static doComputePass(label: string, pipeline: GPUComputePipeline, bindGroup: GPUBindGroup, workgroupsSize: Array<number>): void {
         const pass = WGPUProvider.device!.createCommandEncoder();
         const computePass = pass.beginComputePass();
+        computePass.label = `${label} compute pass`;
         computePass.setPipeline(pipeline);
         computePass.setBindGroup(0, bindGroup);
-        computePass.dispatchWorkgroups(workgroupsSize[0], workgroupsSize[1], workgroupsSize[2] ? workgroupsSize[2] : 1);
+        computePass.dispatchWorkgroups(
+            Math.ceil(workgroupsSize[0] / 8),
+            Math.ceil(workgroupsSize[1] / 8));
         computePass.end();
         WGPUProvider.device!.queue.submit([pass.finish()]);
     }
@@ -287,7 +291,7 @@ export class GPUOperations {
 
         const scalarBuffer = GPUOperations.createScalarBuffer("add", scalar);
         const bindGroup = GPUOperations.createBindGroup("add scalar", tensor, scalarBuffer, res.gpuBuffer);
-        GPUOperations.doComputePass(GPUOperations.addScalarPipeline!, bindGroup, tensor.shape);
+        GPUOperations.doComputePass("add scalar", GPUOperations.addScalarPipeline!, bindGroup, tensor.shape);
         return res;
     }
 
@@ -304,7 +308,7 @@ export class GPUOperations {
         WGPUProvider.device!.queue.writeBuffer(GPUOperations.otherShapeBuffer!, 0, new Uint32Array(other.shape));
 
         const bindGroup = GPUOperations.createBindGroup("add tensor", tensor, other.gpuBuffer, res.gpuBuffer);
-        GPUOperations.doComputePass(GPUOperations.addTensorPipeline!, bindGroup, tensor.shape);
+        GPUOperations.doComputePass("add tensor", GPUOperations.addTensorPipeline!, bindGroup, tensor.shape);
         return res;
     }
 
@@ -319,7 +323,7 @@ export class GPUOperations {
 
         const scalarBuffer = GPUOperations.createScalarBuffer("mul", scalar);
         const bindGroup = GPUOperations.createBindGroup("mul scalar", tensor, scalarBuffer, res.gpuBuffer);
-        GPUOperations.doComputePass(GPUOperations.mulScalarPipeline!, bindGroup, tensor.shape);
+        GPUOperations.doComputePass("mul scalar", GPUOperations.mulScalarPipeline!, bindGroup, tensor.shape);
         return res;
     }
 
@@ -337,7 +341,7 @@ export class GPUOperations {
         WGPUProvider.device!.queue.writeBuffer(GPUOperations.otherShapeBuffer!, 0, new Uint32Array(other.shape));
 
         const bindGroup = GPUOperations.createBindGroup("mul tensor", tensor, other.gpuBuffer, res.gpuBuffer);
-        GPUOperations.doComputePass(GPUOperations.mulTensorPipeline!, bindGroup, [tensor.shape[0], other.shape[1]]);
+        GPUOperations.doComputePass("mul tensor", GPUOperations.mulTensorPipeline!, bindGroup, [tensor.shape[0], other.shape[1]]);
         return res;
     }
 
@@ -351,7 +355,7 @@ export class GPUOperations {
         WGPUProvider.device!.queue.writeBuffer(GPUOperations.otherShapeBuffer!, 0, new Uint32Array([1, 1]));
 
         const bindGroup = GPUOperations.createBindGroup("ReLU", tensor, null, res.gpuBuffer);
-        GPUOperations.doComputePass(GPUOperations.ReLUPipeline!, bindGroup, tensor.shape);
+        GPUOperations.doComputePass("ReLu", GPUOperations.ReLUPipeline!, bindGroup, tensor.shape);
         return res;
     }
 
@@ -366,7 +370,7 @@ export class GPUOperations {
 
         const alphaBuffer = GPUOperations.createScalarBuffer("leakyReLU", alpha);
         const bindGroup = GPUOperations.createBindGroup("leakyReLU", tensor, alphaBuffer, res.gpuBuffer);
-        GPUOperations.doComputePass(GPUOperations.leakyReLUPipeline!, bindGroup, tensor.shape);
+        GPUOperations.doComputePass("leaky ReLU", GPUOperations.leakyReLUPipeline!, bindGroup, tensor.shape);
         return res;
     }
 }

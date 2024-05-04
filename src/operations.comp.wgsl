@@ -11,7 +11,10 @@ var<storage, read> other: array<f32>;
 @group(0) @binding(4)
 var<storage, read_write> result: array<f32>;
 
-@compute @workgroup_size(1)
+// not creating a Tensor struct since it wouldn't allow for n-dim shapes
+// - arrays are only allowed as last element in a struct
+
+@compute @workgroup_size(8, 8)
 fn addScalar(
     @builtin(global_invocation_id) global_id: vec3u
 ) {
@@ -22,7 +25,7 @@ fn addScalar(
     result[index] = input[index] + other[0];
 }
 
-@compute @workgroup_size(1)
+@compute @workgroup_size(8, 8)
 fn addTensor(
     @builtin(global_invocation_id) global_id: vec3u
 ) {
@@ -33,7 +36,7 @@ fn addTensor(
     result[index] = input[index] + other[index];
 }
 
-@compute @workgroup_size(1)
+@compute @workgroup_size(8, 8)
 fn mulScalar(
     @builtin(global_invocation_id) global_id: vec3u
 ) {
@@ -44,12 +47,16 @@ fn mulScalar(
     result[index] = input[index] * other[0];
 }
 
-@compute @workgroup_size(1)
+@compute @workgroup_size(8, 8)
 fn mulTensor(
     @builtin(global_invocation_id) global_id: vec3u
 ) {
     let row = global_id.x;
     let col = global_id.y;
+    if (row >= inputShape[0] || col >= otherShape[1]) {
+        return;
+    }
+
     var sum: f32 = 0;
     for (var k: u32 = 0; k < inputShape[1]; k++) {
         sum += input[(row * inputShape[1]) + k] * other[(k * otherShape[1]) + col];
@@ -57,7 +64,7 @@ fn mulTensor(
     result[(row * otherShape[1] + col)] = sum;
 }
 
-@compute @workgroup_size(1)
+@compute @workgroup_size(8, 8)
 fn ReLU(
     @builtin(global_invocation_id) global_id: vec3u
 ) {
@@ -65,10 +72,10 @@ fn ReLU(
     if (index >= (inputShape[0] * inputShape[1])) {
         return;
     }
-    result[index] = max(0.0, input[index]) + 1;
+    result[index] = max(0.0, input[index]);
 }
 
-@compute @workgroup_size(1)
+@compute @workgroup_size(8, 8)
 fn leakyReLU(
     @builtin(global_invocation_id) global_id: vec3u
 ) {
