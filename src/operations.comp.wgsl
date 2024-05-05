@@ -108,3 +108,14 @@ fn power(
     }
     result[index] = pow(input[index], other[0]);
 }
+
+@compute @workgroup_size(8, 8)
+fn elemWiseMul(
+    @builtin(global_invocation_id) global_id: vec3u
+) {
+    let index = global_id.y + (global_id.x * inputShape[1]);
+    if (index >= (inputShape[0] * inputShape[1])) {
+        return;
+    }
+    result[index] = input[index] * other[index];
+}

@@ -16,6 +16,10 @@ export class Tensor {
     private _childen: Array<Tensor>;
     private _grad?: Tensor;
 
+    // add backward()
+    // call backward()
+    // impl element wise mat mul
+
     set label(label: string) {
         this._label = label;
     }
@@ -345,6 +349,27 @@ export class Tensor {
 
         this._childen.push(res);
         res.label = `(^ ${this.label} ${exponent})`;
+        return res;
+    }
+
+    /**
+    * Element wise multiplication of two Tensors
+    *
+    * @param tensor Tensor to multiply against
+    * @returns Tensor with the element wise multiplication of the two Tensors
+    * */
+    elemWiseMul(tensor: Tensor): Tensor {
+        let res: Tensor;
+        if (this.device == "cpu") {
+            res = CPUOperations.elemWiseMul(this, tensor);
+        } else if (this.device == "wgpu") {
+            res = GPUOperations.elemWiseMul(this, tensor);
+        } else {
+            throw new Error("Invalid device");
+        }
+
+        this._childen.push(res);
+        res.label = `(*e ${this.label} ${tensor.label})`;
         return res;
     }
 

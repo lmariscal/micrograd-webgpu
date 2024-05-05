@@ -14,7 +14,8 @@ export class CPUOperations {
             throw new Error(`Tensor multiplication not set for given mismatched Tensors - ${tensor.shape} vs ${other.shape}`);
         }
 
-        let dst = new Tensor(tensor.shape[0] * other.shape[1], [tensor.shape[0], other.shape[1]]);
+        const requiresGrad = tensor.requiresGrad || other.requiresGrad;
+        let dst = new Tensor(tensor.shape[0] * other.shape[1], [tensor.shape[0], other.shape[1]], "", requiresGrad, "cpu");
         for (let i = 0; i < tensor.shape[0]; ++i) {
             for (let j = 0; j < other.shape[1]; ++j) {
                 let sum = 0;
@@ -29,7 +30,7 @@ export class CPUOperations {
 
     static mulScalar(tensor: Tensor, scalar: number): Tensor {
         const data = tensor.data.map((x) => x * scalar);
-        return new Tensor(data, tensor.shape);
+        return new Tensor(data, tensor.shape, "", tensor.requiresGrad, "cpu");
     }
 
     static addTensor(tensor: Tensor, other: Tensor): Tensor {
@@ -40,7 +41,8 @@ export class CPUOperations {
             throw new Error(`Shapes of Tensors mismatch. ${tensor.label}(${tensor.shape}) vs ${other.label}(${other.shape})`)
         }
 
-        let dst = new Tensor(tensor.length, tensor.shape);
+        const requiresGrad = tensor.requiresGrad || other.requiresGrad;
+        let dst = new Tensor(tensor.length, tensor.shape, "", requiresGrad, "cpu");
         for (let i = 0; i < tensor.length; ++i) {
             dst.data[i] = tensor.data[i] + other.data[i];
         }
@@ -49,21 +51,21 @@ export class CPUOperations {
 
     static addScalar(tensor: Tensor, scalar: number): Tensor {
         const data = tensor.data.map((x) => x + scalar);
-        return new Tensor(data, tensor.shape);
+        return new Tensor(data, tensor.shape, "", tensor.requiresGrad, "cpu");
     }
 
     static ReLU(tensor: Tensor): Tensor {
         const data = tensor.data.map((x) => x > 0 ? x : 0);
-        return new Tensor(data, tensor.shape);
+        return new Tensor(data, tensor.shape, "", tensor.requiresGrad, "cpu");
     }
 
     static leakyReLU(tensor: Tensor, alpha: number): Tensor {
         const data = tensor.data.map((x) => x > 0 ? x : x * alpha);
-        return new Tensor(data, tensor.shape);
+        return new Tensor(data, tensor.shape, "", tensor.requiresGrad, "cpu");
     }
 
     static transpose(tensor: Tensor): Tensor {
-        let dst = new Tensor(tensor.length, [tensor.shape[1], tensor.shape[0]]);
+        let dst = new Tensor(tensor.length, [tensor.shape[1], tensor.shape[0]], "", tensor.requiresGrad, "cpu");
         for (let i = 0; i < tensor.shape[0]; ++i) {
             for (let j = 0; j < tensor.shape[1]; ++j) {
                 dst.data[j * tensor.shape[0] + i] = tensor.data[i * tensor.shape[1] + j];
@@ -73,9 +75,25 @@ export class CPUOperations {
     }
 
     static power(tensor: Tensor, power: number): Tensor {
-        let dst = new Tensor(tensor.length, tensor.shape);
+        let dst = new Tensor(tensor.length, tensor.shape, "", tensor.requiresGrad, "cpu");
         for (let i = 0; i < tensor.length; ++i) {
             dst.data[i] = Math.pow(tensor.data[i], power);
+        }
+        return dst;
+    }
+
+    static elemWiseMul(tensor: Tensor, other: Tensor): Tensor {
+        if (tensor.device != "cpu" || other.device != "cpu") {
+            throw new Error("Both Tensors should be on the same device");
+        }
+        if (tensor.shape[0] != other.shape[0] || tensor.shape[1] != other.shape[1]) {
+            throw new Error(`Shapes of Tensors mismatch. ${tensor.label}(${tensor.shape}) vs ${other.label}(${other.shape})`)
+        }
+
+        const requiresGrad = tensor.requiresGrad || other.requiresGrad;
+        let dst = new Tensor(tensor.length, tensor.shape, "", requiresGrad, "cpu");
+        for (let i = 0; i < tensor.length; ++i) {
+            dst.data[i] = tensor.data[i] * other.data[i];
         }
         return dst;
     }
@@ -95,6 +113,7 @@ export class GPUOperations {
     static leakyReLUPipeline: GPUComputePipeline | undefined;
     static transposePipeline: GPUComputePipeline | undefined;
     static powerPipeline: GPUComputePipeline | undefined;
+    static elemWiseMulPipeline: GPUComputePipeline | undefined;
 
     static setup(): Promise<boolean> {
         if (!WGPUProvider.device) {
@@ -259,6 +278,17 @@ export class GPUOperations {
         });
         GPUOperations.powerPipeline = powerPipeline;
 
+        // elem-wise multiplication pipeline
+        const elemWiseMulPipeline = WGPUProvider.device.createComputePipeline({
+            label: "elem-wise multiplication compute pipeline",
+            compute: {
+                module: shaderModule,
+                entryPoint: "elemWiseMul"
+            },
+            layout: pipelineLayout
+        });
+        GPUOperations.elemWiseMulPipeline = elemWiseMulPipeline;
+
         return Promise.resolve(true);
     }
 
@@ -354,7 +384,8 @@ export class GPUOperations {
         if (tensor.shape[0] != other.shape[0] || tensor.shape[1] != other.shape[1]) {
             throw new Error(`Shapes of Tensors mismatch. ${tensor.label}(${tensor.shape}) vs ${other.label}(${other.shape})`)
         }
-        const res = new Tensor(tensor.length, tensor.shape, "", tensor.requiresGrad, "wgpu");
+        const requiresGrad = tensor.requiresGrad || other.requiresGrad;
+        const res = new Tensor(tensor.length, tensor.shape, "", requiresGrad, "wgpu");
         WGPUProvider.device!.queue.writeBuffer(GPUOperations.inputShapeBuffer!, 0, new Uint32Array(tensor.shape));
         WGPUProvider.device!.queue.writeBuffer(GPUOperations.otherShapeBuffer!, 0, new Uint32Array(other.shape));
 
@@ -390,7 +421,8 @@ export class GPUOperations {
             throw new Error(`Tensor multiplication not set for given mismatched Tensors - ${tensor.shape} vs ${other.shape}`);
         }
 
-        const res = new Tensor(tensor.shape[0] * other.shape[1], [tensor.shape[0], other.shape[1]], "", tensor.requiresGrad, "wgpu");
+        const requiresGrad = tensor.requiresGrad || other.requiresGrad;
+        const res = new Tensor(tensor.shape[0] * other.shape[1], [tensor.shape[0], other.shape[1]], "", requiresGrad, "wgpu");
         WGPUProvider.device!.queue.writeBuffer(GPUOperations.inputShapeBuffer!, 0, new Uint32Array(tensor.shape));
         WGPUProvider.device!.queue.writeBuffer(GPUOperations.otherShapeBuffer!, 0, new Uint32Array(other.shape));
 
@@ -451,6 +483,28 @@ export class GPUOperations {
         const powerBuffer = GPUOperations.createScalarBuffer("power", power);
         const bindGroup = GPUOperations.createBindGroup("power", tensor, powerBuffer, res.gpuBuffer);
         GPUOperations.doComputePass("power", GPUOperations.powerPipeline!, bindGroup, tensor.shape);
+        return res;
+    }
+
+    static elemWiseMul(tensor: Tensor, other: Tensor): Tensor {
+        if (!WGPUProvider.device) {
+            throw new Error("WebGPU provider not setup");
+        }
+        if (tensor.device != "wgpu" || other.device != "wgpu") {
+            throw new Error("Both Tensors should be on the same device");
+        }
+
+        if (tensor.shape[0] != other.shape[0] || tensor.shape[1] != other.shape[1]) {
+            throw new Error(`Shapes of Tensors mismatch. ${tensor.label}(${tensor.shape}) vs ${other.label}(${other.shape})`)
+        }
+
+        const requiresGrad = tensor.requiresGrad || other.requiresGrad;
+        const res = new Tensor(tensor.length, tensor.shape, "", requiresGrad, "wgpu");
+        WGPUProvider.device!.queue.writeBuffer(GPUOperations.inputShapeBuffer!, 0, new Uint32Array(tensor.shape));
+        WGPUProvider.device!.queue.writeBuffer(GPUOperations.otherShapeBuffer!, 0, new Uint32Array(other.shape));
+
+        const bindGroup = GPUOperations.createBindGroup("elem-wise multiplication", tensor, other.gpuBuffer, res.gpuBuffer);
+        GPUOperations.doComputePass("elem-wise multiplication", GPUOperations.elemWiseMulPipeline!, bindGroup, tensor.shape);
         return res;
     }
 }
