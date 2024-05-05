@@ -37,6 +37,7 @@ export class WGPUProvider {
     *
     * @param tensor Tensor to move to the GPU
     * @returns GPUBuffer with the data of the Tensor
+    * @throws Error if the Tensor is already in the GPU
     */
     static moveTensorDataToGPU(tensor: Tensor): GPUBuffer   {
         if (!WGPUProvider.device) {
@@ -61,6 +62,15 @@ export class WGPUProvider {
         return buffer;
     }
 
+    /**
+    * Copy the Tensor data to the CPU
+    *
+    * Do not use this function directly. Use the `Tensor.toCPU()` method instead.
+    *
+    * @param tensor Tensor to copy to the CPU
+    * @returns Float32Array with the data of the Tensor
+    * @throws Error if the Tensor is already in the CPU
+    */
     static async copyTensorDataToCPU(tensor: Tensor): Promise<Float32Array> {
         if (!WGPUProvider.device) {
             throw new Error("WebGPU provider not setup");
@@ -90,9 +100,11 @@ export class WGPUProvider {
 }
 
 if (!(await WGPUProvider.setup())) {
-    console.error("Failed to setup WebGPU provider");
-    if (!navigator.gpu) {
-        console.error("WebGPU not supported");
+    if (typeof Bun === "undefined") {
+        console.error("Failed to setup WebGPU provider");
+        if (!navigator.gpu) {
+            console.error("WebGPU not supported");
+        }
     }
 } else {
     console.debug("WebGPU provider is ready");

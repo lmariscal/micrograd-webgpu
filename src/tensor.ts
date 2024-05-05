@@ -12,13 +12,16 @@ export class Tensor {
     private _data: Array<number> | GPUBuffer;
     private _shape: Array<number>; // RxC
     private _length: number;
+    private _requiresGrad: boolean;
+    private _childen: Array<Tensor>;
+    private _grad?: Tensor;
 
     set label(label: string) {
         this._label = label;
     }
 
     get label(): string {
-        return this._label == "" ? "" : "(" + this._label + ")" ;
+        return this._label == "" ? "" : this._label;
     }
 
     get length(): number {
@@ -27,6 +30,17 @@ export class Tensor {
 
     get device(): Device {
         return this._device;
+    }
+
+    get requiresGrad(): boolean {
+        return this._requiresGrad;
+    }
+
+    get grad(): Tensor {
+        if (this._requiresGrad) {
+            return this._grad as Tensor;
+        }
+        throw new Error("Tensor does not require gradient");
     }
 
     /**
@@ -66,34 +80,38 @@ export class Tensor {
     *
     * @param lenght Length in items of the new Tensor
     * @param shape Shape of the Tensor
-    * @param device Device where the Tensor will be created
     * @param label Label for the Tensor
+    * @param requiresGrad If the Tensor requires gradient
+    * @param device Device where the Tensor will be created
     */
-    constructor(length: number, shape: Array<number>, device?: Device, label?: string,);
+    constructor(length: number, shape: Array<number>, label?: string, requiresGrad?: boolean, device?: Device);
     /**
     * Create a new Tensor with the given Array as value
     *
     * @param items Array containing the items for this Tensor
-    * @param stride Number of columns that the Tensor contains
-    * @param device Device where the Tensor will be created
+    * @param shape Shape of the Tensor
     * @param label Label for the Tensor
+    * @param requiresGrad If the Tensor requires gradient
+    * @param device Device where the Tensor will be created
     */
-    constructor(items: ArrayLike<number>, shape: Array<number>, device?: Device, label?: string);
+    constructor(items: ArrayLike<number>, shape: Array<number>, label?: string, requiresGrad?: boolean, device?: Device);
     /**
     * Create a new Tensor with the given Iterable object as value
     *
     * @param items Iterable object containing the items for this Tensor
-    * @param stride Number of columns that the Tensor contains
-    * @param device Device where the Tensor will be created
+    * @param shape Shape of the Tensor
     * @param label Label for the Tensor
+    * @param requiresGrad If the Tensor requires gradient
+    * @param device Device where the Tensor will be created
     */
-    constructor(items: Iterable<number>, shape: Array<number>, device?: Device, label?: string);
+    constructor(items: Iterable<number>, shape: Array<number>, label?: string, requiresGrad?: boolean, device?: Device);
 
     constructor(
         e: Iterable<number> | ArrayLike<number> | number,
         shape: Array<number>,
-        device: Device = Tensor.defaultDevice,
-        label: string = ""
+        label: string = "",
+        requiresGrad: boolean = false,
+        device: Device = Tensor.defaultDevice
     ) {
         if (typeof e == "number") {
             this._data = new Array<number>(e).fill(0);
@@ -103,6 +121,12 @@ export class Tensor {
         this._shape = shape;
         this._label = label;
         this._device = "cpu";
+        this._requiresGrad = requiresGrad;
+        this._childen = [];
+
+        if (requiresGrad) {
+            this._grad = new Tensor(this._data.length, this._shape, this.label + "_grad", false, device);
+        }
 
         if (this._shape.length == 1) {
             this._shape = [1, this._shape[0]];
@@ -160,24 +184,37 @@ export class Tensor {
     mul(tensor: Tensor): Tensor;
 
     mul(other: number | Tensor): Tensor {
+        let res: Tensor;
         if (this._device == "cpu") {
-            switch(typeof other) {
+            switch (typeof other) {
                 case "number":
-                    return CPUOperations.mulScalar(this, other);
+                    res = CPUOperations.mulScalar(this, other);
+                    break;
                 case "object":
-                    return CPUOperations.mulTensor(this, other);
+                    res = CPUOperations.mulTensor(this, other);
+                    break;
             }
-        }
-        else if (this._device == "wgpu") {
-            switch(typeof other) {
+        } else if (this._device == "wgpu") {
+            switch (typeof other) {
                 case "number":
-                    return GPUOperations.mulScalar(this, other);
+                    res = GPUOperations.mulScalar(this, other);
+                    break;
                 case "object":
-                    return GPUOperations.mulTensor(this, other);
+                    res = GPUOperations.mulTensor(this, other);
+                    break;
             }
+        } else {
+            throw new Error("Invalid device");
         }
 
-        throw new Error("Invalid device");
+        this._childen.push(res);
+        if (other instanceof Tensor) {
+            other._childen.push(res);
+            res.label = `(* ${this.label} ${other.label})`;
+        } else {
+            res.label = `(* ${this.label} ${other})`;
+        }
+        return res;
     }
 
     /**
@@ -196,24 +233,37 @@ export class Tensor {
     add(tensor: Tensor): Tensor;
 
     add(other: number | Tensor): Tensor {
+        let res: Tensor;
         if (this._device == "cpu") {
-            switch(typeof other) {
+            switch (typeof other) {
                 case "number":
-                    return CPUOperations.addScalar(this, other);
+                    res = CPUOperations.addScalar(this, other);
+                    break;
                 case "object":
-                    return CPUOperations.addTensor(this, other);
+                    res = CPUOperations.addTensor(this, other);
+                    break;
             }
-        }
-        else if (this._device == "wgpu") {
-            switch(typeof other) {
+        } else if (this._device == "wgpu") {
+            switch (typeof other) {
                 case "number":
-                    return GPUOperations.addScalar(this, other);
+                    res = GPUOperations.addScalar(this, other);
+                    break;
                 case "object":
-                    return GPUOperations.addTensor(this, other);
+                    res = GPUOperations.addTensor(this, other);
+                    break;
             }
+        } else {
+            throw new Error("Invalid device");
         }
 
-        throw new Error("Invalid device");
+        this._childen.push(res);
+        if (other instanceof Tensor) {
+            other._childen.push(res);
+            res.label = `(+ ${this.label} ${other.label})`;
+        } else {
+            res.label = `(+ ${this.label} ${other})`;
+        }
+        return res;
     }
 
     /**
@@ -222,14 +272,18 @@ export class Tensor {
     * @returns Tensor with the ReLU applied
     */
     ReLU(): Tensor {
+        let res: Tensor;
         if (this.device == "cpu") {
-            return CPUOperations.ReLU(this);
-        }
-        else if (this.device == "wgpu") {
-            return GPUOperations.ReLU(this);
+            res = CPUOperations.ReLU(this);
+        } else if (this.device == "wgpu") {
+            res = GPUOperations.ReLU(this);
+        } else {
+            throw new Error("Invalid device");
         }
 
-        throw new Error("Invalid device");
+        this._childen.push(res);
+        res.label = `(ReLU ${this.label})`;
+        return res;
     }
 
     /**
@@ -239,14 +293,18 @@ export class Tensor {
     * @returns Tensor with the Leaky ReLU applied
     */
     leakyReLU(alpha: number = 0.01): Tensor {
+        let res: Tensor;
         if (this.device == "cpu") {
-            return CPUOperations.leakyReLU(this, alpha);
-        }
-        else if (this.device == "wgpu") {
-            return GPUOperations.leakyReLU(this, alpha);
+            res = CPUOperations.leakyReLU(this, alpha);
+        } else if (this.device == "wgpu") {
+            res = GPUOperations.leakyReLU(this, alpha);
+        } else {
+            throw new Error("Invalid device");
         }
 
-        throw new Error("Invalid device");
+        this._childen.push(res);
+        res.label = `(LeakyReLU ${this.label})`;
+        return res;
     }
 
     /**
@@ -255,14 +313,18 @@ export class Tensor {
     * @returns Tensor transposed
     */
     transpose(): Tensor {
+        let res: Tensor;
         if (this.device == "cpu") {
-            return CPUOperations.transpose(this);
-        }
-        else if (this.device == "wgpu") {
-            return GPUOperations.transpose(this);
+            res = CPUOperations.transpose(this);
+        } else if (this.device == "wgpu") {
+            res = GPUOperations.transpose(this);
+        } else {
+            throw new Error("Invalid device");
         }
 
-        throw new Error("Invalid device");
+        this._childen.push(res);
+        res.label = `(T ${this.label})`;
+        return res;
     }
 
     /**
@@ -272,14 +334,18 @@ export class Tensor {
     * @returns Tensor with the elements raised to the exponent
     */
     power(exponent: number): Tensor {
+        let res: Tensor;
         if (this.device == "cpu") {
-            return CPUOperations.power(this, exponent);
-        }
-        else if (this.device == "wgpu") {
-            return GPUOperations.power(this, exponent);
+            res = CPUOperations.power(this, exponent);
+        } else if (this.device == "wgpu") {
+            res = GPUOperations.power(this, exponent);
+        } else {
+            throw new Error("Invalid device");
         }
 
-        throw new Error("Invalid device");
+        this._childen.push(res);
+        res.label = `(^ ${this.label} ${exponent})`;
+        return res;
     }
 
     /**
@@ -302,5 +368,36 @@ export class Tensor {
             this._data = Array.from(await WGPUProvider.copyTensorDataToCPU(this));
             this._device = "cpu";
         }
+    }
+
+    /**
+    * Prettify the Tensor and get it as a string
+    *
+    * @returns String with the Tensor prettified
+    * */
+    pretty(): string {
+        let str = "";
+        for (let i = 0; i < this._shape[0]; i++) {
+            str += "[ ";
+            for (let j = 0; j < this._shape[1]; j++) {
+                str += this.at(i, j) + " ";
+            }
+            str += "]\n";
+        }
+        return str;
+    }
+
+    /**
+    * Get the descendancy of the Tensor, including itself
+    *
+    * @returns Array with the descendancy of the Tensor
+    */
+    descendancy(): Array<string> {
+        let des = [];
+        des.push(this.label);
+        this._childen.forEach((child) => {
+            des.push(...child.descendancy());
+        });
+        return des;
     }
 }

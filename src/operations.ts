@@ -7,6 +7,9 @@ export class CPUOperations {
         // TODO: Not use a naive approach
         // ~TODO: Support n-dim Tensors~ (Not a goal of this project)
 
+        if (tensor.device != "cpu" || other.device != "cpu") {
+            throw new Error("Both Tensors should be on the same device");
+        }
         if (tensor.shape[1] != other.shape[0]) {
             throw new Error(`Tensor multiplication not set for given mismatched Tensors - ${tensor.shape} vs ${other.shape}`);
         }
@@ -30,6 +33,9 @@ export class CPUOperations {
     }
 
     static addTensor(tensor: Tensor, other: Tensor): Tensor {
+        if (tensor.device != "cpu" || other.device != "cpu") {
+            throw new Error("Both Tensors should be on the same device");
+        }
         if (tensor.shape[0] != other.shape[0] || tensor.shape[1] != other.shape[1]) {
             throw new Error(`Shapes of Tensors mismatch. ${tensor.label}(${tensor.shape}) vs ${other.label}(${other.shape})`)
         }
@@ -92,7 +98,7 @@ export class GPUOperations {
 
     static setup(): Promise<boolean> {
         if (!WGPUProvider.device) {
-            throw new Error("WebGPU provider not setup");
+            return Promise.resolve(false);
         }
 
         // input shape buffer
@@ -327,7 +333,7 @@ export class GPUOperations {
             throw new Error("WebGPU provider not setup");
         }
 
-        const res = new Tensor(tensor.length, tensor.shape, "wgpu");
+        const res = new Tensor(tensor.length, tensor.shape, "", tensor.requiresGrad, "wgpu");
         WGPUProvider.device!.queue.writeBuffer(GPUOperations.inputShapeBuffer!, 0, new Uint32Array(tensor.shape));
         WGPUProvider.device!.queue.writeBuffer(GPUOperations.otherShapeBuffer!, 0, new Uint32Array([1, 1]));
 
@@ -341,11 +347,14 @@ export class GPUOperations {
         if (!WGPUProvider.device) {
             throw new Error("WebGPU provider not setup");
         }
+        if (tensor.device != "wgpu" || other.device != "wgpu") {
+            throw new Error("Both Tensors should be on the same device");
+        }
 
         if (tensor.shape[0] != other.shape[0] || tensor.shape[1] != other.shape[1]) {
             throw new Error(`Shapes of Tensors mismatch. ${tensor.label}(${tensor.shape}) vs ${other.label}(${other.shape})`)
         }
-        const res = new Tensor(tensor.length, tensor.shape, "wgpu");
+        const res = new Tensor(tensor.length, tensor.shape, "", tensor.requiresGrad, "wgpu");
         WGPUProvider.device!.queue.writeBuffer(GPUOperations.inputShapeBuffer!, 0, new Uint32Array(tensor.shape));
         WGPUProvider.device!.queue.writeBuffer(GPUOperations.otherShapeBuffer!, 0, new Uint32Array(other.shape));
 
@@ -359,7 +368,7 @@ export class GPUOperations {
             throw new Error("WebGPU provider not setup");
         }
 
-        const res = new Tensor(tensor.length, tensor.shape, "wgpu");
+        const res = new Tensor(tensor.length, tensor.shape, "", tensor.requiresGrad, "wgpu");
         WGPUProvider.device!.queue.writeBuffer(GPUOperations.inputShapeBuffer!, 0, new Uint32Array(tensor.shape));
         WGPUProvider.device!.queue.writeBuffer(GPUOperations.otherShapeBuffer!, 0, new Uint32Array([1, 1]));
 
@@ -373,12 +382,15 @@ export class GPUOperations {
         if (!WGPUProvider.device) {
             throw new Error("WebGPU provider not setup");
         }
+        if (tensor.device != "wgpu" || other.device != "wgpu") {
+            throw new Error("Both Tensors should be on the same device");
+        }
 
         if (tensor.shape[1] != other.shape[0]) {
             throw new Error(`Tensor multiplication not set for given mismatched Tensors - ${tensor.shape} vs ${other.shape}`);
         }
 
-        const res = new Tensor(tensor.shape[0] * other.shape[1], [tensor.shape[0], other.shape[1]], "wgpu");
+        const res = new Tensor(tensor.shape[0] * other.shape[1], [tensor.shape[0], other.shape[1]], "", tensor.requiresGrad, "wgpu");
         WGPUProvider.device!.queue.writeBuffer(GPUOperations.inputShapeBuffer!, 0, new Uint32Array(tensor.shape));
         WGPUProvider.device!.queue.writeBuffer(GPUOperations.otherShapeBuffer!, 0, new Uint32Array(other.shape));
 
@@ -392,7 +404,7 @@ export class GPUOperations {
             throw new Error("WebGPU provider not setup");
         }
 
-        const res = new Tensor(tensor.length, tensor.shape, "wgpu");
+        const res = new Tensor(tensor.length, tensor.shape, "", tensor.requiresGrad, "wgpu");
         WGPUProvider.device!.queue.writeBuffer(GPUOperations.inputShapeBuffer!, 0, new Uint32Array(tensor.shape));
 
         const bindGroup = GPUOperations.createBindGroup("ReLU", tensor, null, res.gpuBuffer);
@@ -405,7 +417,7 @@ export class GPUOperations {
             throw new Error("WebGPU provider not setup");
         }
 
-        const res = new Tensor(tensor.length, tensor.shape, "wgpu");
+        const res = new Tensor(tensor.length, tensor.shape, "", tensor.requiresGrad, "wgpu");
         WGPUProvider.device!.queue.writeBuffer(GPUOperations.inputShapeBuffer!, 0, new Uint32Array(tensor.shape));
         WGPUProvider.device!.queue.writeBuffer(GPUOperations.otherShapeBuffer!, 0, new Uint32Array([1, 1]));
 
@@ -420,7 +432,7 @@ export class GPUOperations {
             throw new Error("WebGPU provider not setup");
         }
 
-        const res = new Tensor(tensor.length, [tensor.shape[1], tensor.shape[0]], "wgpu");
+        const res = new Tensor(tensor.length, [tensor.shape[1], tensor.shape[0]], "", tensor.requiresGrad, "wgpu");
         WGPUProvider.device!.queue.writeBuffer(GPUOperations.inputShapeBuffer!, 0, new Uint32Array(tensor.shape));
 
         const bindGroup = GPUOperations.createBindGroup("transpose", tensor, null, res.gpuBuffer);
@@ -433,7 +445,7 @@ export class GPUOperations {
             throw new Error("WebGPU provider not setup");
         }
 
-        const res = new Tensor(tensor.length, tensor.shape, "wgpu");
+        const res = new Tensor(tensor.length, tensor.shape, "", tensor.requiresGrad, "wgpu");
         WGPUProvider.device!.queue.writeBuffer(GPUOperations.inputShapeBuffer!, 0, new Uint32Array(tensor.shape));
 
         const powerBuffer = GPUOperations.createScalarBuffer("power", power);
@@ -444,7 +456,9 @@ export class GPUOperations {
 }
 
 if (!(await GPUOperations.setup())) {
-    console.error("Failed to setup GPU Operations module");
+    if (typeof Bun === "undefined") {
+        console.error("Failed to setup GPU Operations module");
+    }
 } else {
     console.debug("GPU Operations module is ready");
 }
