@@ -18,10 +18,10 @@ var<storage, read_write> result: array<f32>;
 fn addScalar(
     @builtin(global_invocation_id) global_id: vec3u
 ) {
-    let index = global_id.y + (global_id.x * inputShape[1]);
-    if (index >= (inputShape[0] * inputShape[1])) {
+    if (global_id.x >= inputShape[0] || global_id.y >= inputShape[1]) {
         return;
     }
+    let index = global_id.y + (global_id.x * inputShape[1]);
     result[index] = input[index] + other[0];
 }
 
@@ -29,10 +29,10 @@ fn addScalar(
 fn addTensor(
     @builtin(global_invocation_id) global_id: vec3u
 ) {
-    let index = global_id.y + (global_id.x * inputShape[1]);
-    if (index >= (inputShape[0] * inputShape[1])) {
+    if (global_id.x >= inputShape[0] || global_id.y >= inputShape[1]) {
         return;
     }
+    let index = global_id.y + (global_id.x * inputShape[1]);
     result[index] = input[index] + other[index];
 }
 
@@ -40,10 +40,10 @@ fn addTensor(
 fn mulScalar(
     @builtin(global_invocation_id) global_id: vec3u
 ) {
-    let index = global_id.y + (global_id.x * inputShape[1]);
-    if (index >= (inputShape[0] * inputShape[1])) {
+    if (global_id.x >= inputShape[0] || global_id.y >= inputShape[1]) {
         return;
     }
+    let index = global_id.y + (global_id.x * inputShape[1]);
     result[index] = input[index] * other[0];
 }
 
@@ -51,16 +51,17 @@ fn mulScalar(
 fn mulTensor(
     @builtin(global_invocation_id) global_id: vec3u
 ) {
-    let row = global_id.x;
-    let col = global_id.y;
-    if (row >= inputShape[0] || col >= otherShape[1]) {
+    if (global_id.x >= inputShape[0] || global_id.y >= inputShape[1]) {
         return;
     }
-
+    let row = global_id.x;
+    let col = global_id.y;
     var sum: f32 = 0;
+
     for (var k: u32 = 0; k < inputShape[1]; k++) {
         sum += input[(row * inputShape[1]) + k] * other[(k * otherShape[1]) + col];
     }
+
     result[(row * otherShape[1] + col)] = sum;
 }
 
@@ -68,10 +69,10 @@ fn mulTensor(
 fn ReLU(
     @builtin(global_invocation_id) global_id: vec3u
 ) {
-    let index = global_id.y + (global_id.x * inputShape[1]);
-    if (index >= (inputShape[0] * inputShape[1])) {
+    if (global_id.x >= inputShape[0] || global_id.y >= inputShape[1]) {
         return;
     }
+    let index = global_id.y + (global_id.x * inputShape[1]);
     result[index] = max(0.0, input[index]);
 }
 
@@ -79,10 +80,10 @@ fn ReLU(
 fn leakyReLU(
     @builtin(global_invocation_id) global_id: vec3u
 ) {
-    let index = global_id.y + (global_id.x * inputShape[1]);
-    if (index >= (inputShape[0] * inputShape[1])) {
+    if (global_id.x >= inputShape[0] || global_id.y >= inputShape[1]) {
         return;
     }
+    let index = global_id.y + (global_id.x * inputShape[1]);
     result[index] = max(0.1 * input[index], input[index]);
 }
 
@@ -90,11 +91,11 @@ fn leakyReLU(
 fn transpose(
     @builtin(global_invocation_id) global_id: vec3u
 ) {
-    let row = global_id.x;
-    let col = global_id.y;
-    if (row >= inputShape[0] || col >= inputShape[1]) {
+    if (global_id.x >= inputShape[0] || global_id.y >= inputShape[1]) {
         return;
     }
+    let row = global_id.x;
+    let col = global_id.y;
     result[(col * inputShape[0]) + row] = input[(row * inputShape[1]) + col];
 }
 
@@ -102,10 +103,10 @@ fn transpose(
 fn power(
     @builtin(global_invocation_id) global_id: vec3u
 ) {
-    let index = global_id.y + (global_id.x * inputShape[1]);
-    if (index >= (inputShape[0] * inputShape[1])) {
+    if (global_id.x >= inputShape[0] || global_id.y >= inputShape[1]) {
         return;
     }
+    let index = global_id.y + (global_id.x * inputShape[1]);
     result[index] = pow(input[index], other[0]);
 }
 
@@ -113,9 +114,9 @@ fn power(
 fn elemWiseMul(
     @builtin(global_invocation_id) global_id: vec3u
 ) {
-    let index = global_id.y + (global_id.x * inputShape[1]);
-    if (index >= (inputShape[0] * inputShape[1])) {
+    if (global_id.x >= inputShape[0] || global_id.y >= inputShape[1]) {
         return;
     }
+    let index = global_id.y + (global_id.x * inputShape[1]);
     result[index] = input[index] * other[index];
 }
