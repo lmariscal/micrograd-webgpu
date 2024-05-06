@@ -54,6 +54,22 @@ export class CPUOperations {
         return new Tensor(data, tensor.shape, "", tensor.requiresGrad, "cpu");
     }
 
+    static subTensor(tensor: Tensor, other: Tensor): Tensor {
+        if (tensor.device != "cpu" || other.device != "cpu") {
+            throw new Error("Both Tensors should be on the same device");
+        }
+        if (tensor.shape[0] != other.shape[0] || tensor.shape[1] != other.shape[1]) {
+            throw new Error(`Shapes of Tensors mismatch. ${tensor.label}(${tensor.shape}) vs ${other.label}(${other.shape})`)
+        }
+
+        const requiresGrad = tensor.requiresGrad || other.requiresGrad;
+        let dst = new Tensor(tensor.length, tensor.shape, "", requiresGrad, "cpu");
+        for (let i = 0; i < tensor.length; ++i) {
+            dst.data[i] = tensor.data[i] - other.data[i];
+        }
+        return dst;
+    }
+
     static ReLU(tensor: Tensor): Tensor {
         const data = tensor.data.map((x) => x > 0 ? x : 0);
         return new Tensor(data, tensor.shape, "", tensor.requiresGrad, "cpu");
@@ -125,6 +141,8 @@ export class GPUOperations {
 
     static addScalarPipeline: GPUComputePipeline | undefined;
     static addTensorPipeline: GPUComputePipeline | undefined;
+    static subPipelinePipeline: GPUComputePipeline | undefined;
+    static subTensorPipeline: GPUComputePipeline | undefined;
     static mulScalarPipeline: GPUComputePipeline | undefined;
     static mulTensorPipeline: GPUComputePipeline | undefined;
     static ReLUPipeline: GPUComputePipeline | undefined;
@@ -135,6 +153,8 @@ export class GPUOperations {
     static ReLUPrimePipeline: GPUComputePipeline | undefined;
     static powerPrimePipeline: GPUComputePipeline | undefined;
     static leakyReLUPrimePipeline: GPUComputePipeline | undefined;
+
+    static computePassCount = 0;
 
     static setup(): Promise<boolean> {
         if (!WGPUProvider.device) {
@@ -232,6 +252,17 @@ export class GPUOperations {
             layout: pipelineLayout
         });
         GPUOperations.addTensorPipeline = addTensorPipeline;
+
+        // sub tensor pipeline
+        const subTensorPipeline = WGPUProvider.device.createComputePipeline({
+            label: "sub tensor compute pipeline",
+            compute: {
+                module: shaderModule,
+                entryPoint: "subTensor"
+            },
+            layout: pipelineLayout
+        });
+        GPUOperations.subTensorPipeline = subTensorPipeline;
 
         // mul scalar pipeline
         const mulScalarPipeline = WGPUProvider.device.createComputePipeline({
@@ -398,6 +429,8 @@ export class GPUOperations {
             Math.ceil(workgroupsSize[1] / 8));
         computePass.end();
         WGPUProvider.device!.queue.submit([pass.finish()]);
+
+        GPUOperations.computePassCount++;
     }
 
     private static createScalarBuffer(label: string, scalar: number): GPUBuffer {
@@ -445,6 +478,28 @@ export class GPUOperations {
 
         const bindGroup = GPUOperations.createBindGroup("add tensor", tensor, other.gpuBuffer, res.gpuBuffer);
         GPUOperations.doComputePass("add tensor", GPUOperations.addTensorPipeline!, bindGroup, tensor.shape);
+        return res;
+    }
+
+    static subTensor(tensor: Tensor, other: Tensor): Tensor {
+        if (!WGPUProvider.device) {
+            throw new Error("WebGPU provider not setup");
+        }
+        if (tensor.device != "wgpu" || other.device != "wgpu") {
+            throw new Error("Both Tensors should be on the same device");
+        }
+
+        if (tensor.shape[0] != other.shape[0] || tensor.shape[1] != other.shape[1]) {
+            throw new Error(`Shapes of Tensors mismatch. ${tensor.label}(${tensor.shape}) vs ${other.label}(${other.shape})`)
+        }
+
+        const requiresGrad = tensor.requiresGrad || other.requiresGrad;
+        const res = new Tensor(tensor.length, tensor.shape, "", requiresGrad, "wgpu");
+        WGPUProvider.device!.queue.writeBuffer(GPUOperations.inputShapeBuffer!, 0, new Uint32Array(tensor.shape));
+        WGPUProvider.device!.queue.writeBuffer(GPUOperations.otherShapeBuffer!, 0, new Uint32Array(other.shape));
+
+        const bindGroup = GPUOperations.createBindGroup("sub tensor", tensor, other.gpuBuffer, res.gpuBuffer);
+        GPUOperations.doComputePass("sub tensor", GPUOperations.subTensorPipeline!, bindGroup, tensor.shape);
         return res;
     }
 

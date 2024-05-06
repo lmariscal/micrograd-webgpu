@@ -81,11 +81,17 @@ export class Tensor {
         throw new Error("Invalid device");
     }
 
+    get children(): Array<Tensor> {
+        return this._children;
+    }
+
     randomize(): void {
-        if (this._device == "cpu") {
-            this._data = (this._data as Array<number>).map(() => Math.random());
-        } else {
-            throw new Error("TODO WGPU");
+        this._data = new Array<number>(this.length).fill(0).map(() => Math.random());
+        if (this._device == "wgpu") {
+            this._device = "cpu";
+            this._data = WGPUProvider.moveTensorDataToGPU(this);
+            this._device = "wgpu";
+
         }
     }
 
@@ -96,6 +102,7 @@ export class Tensor {
                 child.zeroGrad();
             }
         }
+        this._children = [];
     }
 
     /**
@@ -133,7 +140,7 @@ export class Tensor {
         e: Iterable<number> | ArrayLike<number> | number,
         shape: Array<number>,
         label: string = "",
-        requiresGrad: boolean = false,
+        requiresGrad: boolean = true,
         device: Device = Tensor.defaultDevice
     ) {
         if (typeof e == "number") {
@@ -230,6 +237,7 @@ export class Tensor {
             throw new Error("Invalid device");
         }
 
+        res._children = [];
         res._children.push(this);
         if (other instanceof Tensor) {
             res._children.push(other);
@@ -238,8 +246,8 @@ export class Tensor {
             }
 
             res._backward = () => {
-                this._grad = res.grad.mul(other.transpose());
-                other._grad = this.transpose().mul(res.grad);
+                this._grad = this._grad!.add(res.grad.mul(other.transpose()));
+                other._grad = other._grad!.add(this.transpose().mul(res.grad));
             };
         } else {
             if (Tensor.debugMode) {
@@ -247,7 +255,7 @@ export class Tensor {
             }
 
             res._backward = () => {
-                this._grad = res.grad.mul(other);
+                this._grad = this._grad!.add(res.grad.mul(other));
             };
         }
         return res;
@@ -292,6 +300,7 @@ export class Tensor {
             throw new Error("Invalid device");
         }
 
+        res._children = [];
         res._children.push(this);
         if (other instanceof Tensor) {
             res._children.push(other);
@@ -300,8 +309,8 @@ export class Tensor {
             }
 
             res._backward = () => {
-                this._grad = res.grad;
-                other._grad = res.grad;
+                this._grad = this._grad!.add(res.grad);
+                other._grad = other._grad!.add(res.grad);
             };
         } else {
             if (Tensor.debugMode) {
@@ -309,11 +318,75 @@ export class Tensor {
             }
 
             res._backward = () => {
-                this._grad = res.grad;
+                this._grad = this._grad!.add(res.grad);
             };
         }
         return res;
     }
+
+    /**
+    * Subtract a Scalar from a Tensor
+    *
+    * @param scalar Scalar to subtract from the Tensor elements
+    * @returns Tensor with the scalar subtracted from the elements
+    */
+    sub(scalar: number): Tensor;
+    /*
+    * Subtract a Tensor from a Tensor
+    *
+    * @param other Other tensor to subtract
+    * @returns Tensor with the difference of the two tensors
+    */
+    sub(other: Tensor): Tensor;
+
+    sub(other: number | Tensor): Tensor {
+        let res: Tensor;
+        if (this._device == "cpu") {
+            switch (typeof other) {
+                case "number":
+                    res = CPUOperations.addScalar(this, -other);
+                    break;
+                case "object":
+                    res = CPUOperations.subTensor(this, other);
+                    break;
+            }
+        } else if (this._device == "wgpu") {
+            switch (typeof other) {
+                case "number":
+                    res = GPUOperations.addScalar(this, -other);
+                    break;
+                case "object":
+                    res = GPUOperations.subTensor(this, other);
+                    break;
+            }
+        } else {
+            throw new Error("Invalid device");
+        }
+
+        res._children = [];
+        res._children.push(this);
+        if (other instanceof Tensor) {
+            res._children.push(other);
+            if (Tensor.debugMode) {
+                res.label = `(- ${this.label} ${other.label})`;
+            }
+
+            res._backward = () => {
+                this._grad = this._grad!.add(res.grad);
+                other._grad = other._grad!.add(res.grad.mul(-1));
+            };
+        } else {
+            if (Tensor.debugMode) {
+                res.label = `(- ${this.label} ${other})`;
+            }
+
+            res._backward = () => {
+                this._grad = this._grad!.add(res.grad);
+            };
+        }
+        return res;
+    }
+
 
     /**
     * Apply the ReLU activation function to the Tensor
@@ -330,6 +403,7 @@ export class Tensor {
             throw new Error("Invalid device");
         }
 
+        res._children = [];
         res._children.push(this);
         if (Tensor.debugMode) {
             res.label = `(ReLU ${this.label})`;
@@ -337,9 +411,9 @@ export class Tensor {
 
         res._backward = () => {
             if (this._device == "cpu") {
-                this._grad = CPUOperations.ReLUPrime(this).elemWiseMul(res.grad);
+                this._grad = this._grad!.add(CPUOperations.ReLUPrime(this).elemWiseMul(res.grad));
             } else if (this._device == "wgpu") {
-                this._grad = GPUOperations.ReLUPrime(this).elemWiseMul(res.grad);
+                this._grad = this._grad!.add(GPUOperations.ReLUPrime(this).elemWiseMul(res.grad));
             }
         };
         return res;
@@ -361,6 +435,7 @@ export class Tensor {
             throw new Error("Invalid device");
         }
 
+        res._children = [];
         res._children.push(this);
         if (Tensor.debugMode) {
             res.label = `(LeakyReLU ${this.label})`;
@@ -368,9 +443,9 @@ export class Tensor {
 
         res._backward = () => {
             if (this._device == "cpu") {
-                this._grad = CPUOperations.leakyReLUPrime(this, alpha).elemWiseMul(res.grad);
+                this._grad = this._grad!.add(CPUOperations.leakyReLUPrime(this, alpha).elemWiseMul(res.grad));
             } else if (this._device == "wgpu") {
-                this._grad = GPUOperations.leakyReLUPrime(this, alpha).elemWiseMul(res.grad);
+                this._grad = this._grad!.add(GPUOperations.leakyReLUPrime(this, alpha).elemWiseMul(res.grad));
             }
         }
         return res;
@@ -391,6 +466,7 @@ export class Tensor {
             throw new Error("Invalid device");
         }
 
+        res._children = [];
         res._children.push(this);
         if (Tensor.debugMode) {
             res.label = `(T ${this.label})`;
@@ -414,6 +490,7 @@ export class Tensor {
             throw new Error("Invalid device");
         }
 
+        res._children = [];
         res._children.push(this);
         if (Tensor.debugMode) {
             res.label = `(^ ${this.label} ${exponent})`;
@@ -421,9 +498,9 @@ export class Tensor {
 
         res._backward = () => {
             if (this._device == "cpu") {
-                this._grad = CPUOperations.powerPrime(this, exponent).elemWiseMul(res.grad);
+                this._grad = this._grad!.add(CPUOperations.powerPrime(this, exponent).elemWiseMul(res.grad));
             } else if (this._device == "wgpu") {
-                this._grad = GPUOperations.powerPrime(this, exponent).elemWiseMul(res.grad);
+                this._grad = this._grad!.add(GPUOperations.powerPrime(this, exponent).elemWiseMul(res.grad));
             }
         };
         return res;
@@ -445,14 +522,15 @@ export class Tensor {
             throw new Error("Invalid device");
         }
 
+        res._children = [];
         res._children.push(this);
         if (Tensor.debugMode) {
             res.label = `(*e ${this.label} ${other.label})`;
         }
 
         res._backward = () => {
-            this._grad = res.grad.elemWiseMul(other);
-            other._grad = res.grad.elemWiseMul(this);
+            this._grad = this._grad!.add(res.grad.elemWiseMul(other));
+            other._grad = other._grad!.add(res.grad.elemWiseMul(this));
         };
         return res;
     }
@@ -500,9 +578,8 @@ export class Tensor {
             cpy = WGPUProvider.duplicateTensor(this);
         }
 
-        cpy._children = this._children;
         if (this._requiresGrad) {
-            cpy._grad = this.grad.copy();
+            cpy._grad = this._grad!.copy();
         }
         return cpy;
     }
@@ -559,27 +636,14 @@ export class Tensor {
 
         dfs(this);
         topo.reverse();
+        if (Tensor.debugMode) {
+            console.log("topo length:", topo.length);
+        }
 
         for (let t of topo) {
-            // console.group(t.label + " requires grad: " + t.requiresGrad);
-            // console.log("val:\n" + t.pretty());
             if (t._backward) {
                 t._backward();
             }
-            // if (t.requiresGrad) {
-            //     console.log("grad:\n" + t.grad.pretty());
-            // }
-            // console.groupEnd();
         }
-
-        // console.log("============");
-
-        // console.group("Backward pass");
-        // for (let t of topo) {
-        //     if (!t.requiresGrad) continue;
-        //     await t.toCPU();
-        //     console.log(t.label, "\n" + t.grad.pretty());
-        // }
-        // console.groupEnd();
     }
 }

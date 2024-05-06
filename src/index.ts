@@ -1,3 +1,5 @@
+import { Model } from "./nn";
+import { GPUOperations } from "./operations";
 import { Tensor } from "./tensor";
 
 let xor_train = [
@@ -14,67 +16,50 @@ let and_train = [
     { input: [1, 1], output: [1] }
 ];
 
-function loss(y: Tensor, desired: number): Tensor {
-    return y.add(-desired).pow(2);
-}
-
-function forward(x: Tensor, w1: Tensor, b1: Tensor, w2: Tensor, b2: Tensor): Tensor {
-    let x1w1 = x.mul(w1);
-    let x1w1b1 = x1w1.add(b1);
-    let y1 = x1w1b1.ReLU();
-
-    let y1w2 = y1.mul(w2);
-    let y1w2b2 = y1w2.add(b2);
-    let y2 = y1w2b2.ReLU();
-
-    return y2;
-}
-
 async function main() {
     xor_train;
     and_train;
+    Tensor.defaultDevice = "cpu";
+    Tensor.debugMode = false;
 
-    let desired = 13;
+    let model = new Model([1, 1]);
+    let desired = new Tensor([13], [1], "desired");
+    let x = new Tensor([5], [1], "x");
 
-    Tensor.defaultDevice = "wgpu";
-    let x = new Tensor([5, 6], [1, 2], "x");
+    let params = model.params;
+    for (let p of params) {
+        console.log(p.label, p.pretty());
+    }
 
-    let w1 = new Tensor([1, 1, 1, 1], [2, 2], "w1", true);
-    let b1 = new Tensor([1, 1], [1, 2], "b1", true);
+    for (let i = 0; i < 1000; i++) {
+        console.log("i:", i);
 
-    let w2 = new Tensor([1, 1], [2, 1], "w2", true);
-    let b2 = new Tensor([1], [1], "b2", true);
-
-    for (let i = 0; i < 10; i++) {
-        w1.zeroGrad();
-        b1.zeroGrad();
-        w2.zeroGrad();
-        b2.zeroGrad();
-
-        let y = forward(x, w1, b1, w2, b2);
-        let los = loss(y, desired);
+        GPUOperations.computePassCount = 0;
+        let y = model.forward(x);
+        let los = y.sub(desired).pow(2);
         los.backward();
 
         let lr = 0.001;
-        w1 = w1.add(w1.grad.mul(-lr));
-        b1 = b1.add(b1.grad.mul(-lr));
-        w2 = w2.add(w2.grad.mul(-lr));
-        b2 = b2.add(b2.grad.mul(-lr));
+        model.learn(lr);
 
-        console.log("i:", i);
+        model.zeroGrad();
+        console.log("computePassCount:", GPUOperations.computePassCount);
     }
 
-    let y = forward(x, w1, b1, w2, b2);
-    let los = loss(y, desired);
-    los.backward();
-    let lossc = los.copy();
-    let yc = y.copy();
-    if (lossc.device == "wgpu") {
-        await lossc.toCPU();
-        await yc.toCPU();
+    params = model.params;
+    for (let p of params) {
+        console.log(p.label, p.pretty());
     }
-    console.log("loss:", lossc.data[0]);
-    console.log("y:", yc.data[0]);
+
+    let y = model.forward(x);
+    let loss = y.sub(desired).pow(2);
+    loss.backward();
+    if (loss.device == "wgpu") {
+        await loss.toCPU();
+        await y.toCPU();
+    }
+    console.log("loss:", loss.pretty());
+    console.log("y:", y.pretty());
 }
 
 main();

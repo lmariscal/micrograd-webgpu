@@ -37,6 +37,28 @@ fn addTensor(
 }
 
 @compute @workgroup_size(8, 8)
+fn subScalar(
+    @builtin(global_invocation_id) global_id: vec3u
+) {
+    if (global_id.x >= inputShape[0] || global_id.y >= inputShape[1]) {
+        return;
+    }
+    let index = global_id.y + (global_id.x * inputShape[1]);
+    result[index] = input[index] - other[0];
+}
+
+@compute @workgroup_size(8, 8)
+fn subTensor(
+    @builtin(global_invocation_id) global_id: vec3u
+) {
+    if (global_id.x >= inputShape[0] || global_id.y >= inputShape[1]) {
+        return;
+    }
+    let index = global_id.y + (global_id.x * inputShape[1]);
+    result[index] = input[index] - other[index];
+}
+
+@compute @workgroup_size(8, 8)
 fn mulScalar(
     @builtin(global_invocation_id) global_id: vec3u
 ) {
