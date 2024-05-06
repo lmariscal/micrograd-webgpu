@@ -97,6 +97,24 @@ export class CPUOperations {
         }
         return dst;
     }
+
+    static ReLUPrime(tensor: Tensor): Tensor {
+        const data = tensor.data.map((x) => x > 0 ? 1 : 0);
+        return new Tensor(data, tensor.shape, "", tensor.requiresGrad, "cpu");
+    }
+
+    static powerPrime(tensor: Tensor, power: number): Tensor {
+        let dst = new Tensor(tensor.length, tensor.shape, "", tensor.requiresGrad, "cpu");
+        for (let i = 0; i < tensor.length; ++i) {
+            dst.data[i] = power * Math.pow(tensor.data[i], power - 1);
+        }
+        return dst;
+    }
+
+    static leakyReLUPrime(tensor: Tensor, alpha: number): Tensor {
+        const data = tensor.data.map((x) => x > 0 ? 1 : alpha);
+        return new Tensor(data, tensor.shape, "", tensor.requiresGrad, "cpu");
+    }
 }
 
 export class GPUOperations {
@@ -114,6 +132,9 @@ export class GPUOperations {
     static transposePipeline: GPUComputePipeline | undefined;
     static powerPipeline: GPUComputePipeline | undefined;
     static elemWiseMulPipeline: GPUComputePipeline | undefined;
+    static ReLUPrimePipeline: GPUComputePipeline | undefined;
+    static powerPrimePipeline: GPUComputePipeline | undefined;
+    static leakyReLUPrimePipeline: GPUComputePipeline | undefined;
 
     static setup(): Promise<boolean> {
         if (!WGPUProvider.device) {
@@ -288,6 +309,39 @@ export class GPUOperations {
             layout: pipelineLayout
         });
         GPUOperations.elemWiseMulPipeline = elemWiseMulPipeline;
+
+        // ReLU prime pipeline
+        const ReLUPrimePipeline = WGPUProvider.device.createComputePipeline({
+            label: "ReLU prime compute pipeline",
+            compute: {
+                module: shaderModule,
+                entryPoint: "ReLUPrime"
+            },
+            layout: pipelineLayout
+        });
+        GPUOperations.ReLUPrimePipeline = ReLUPrimePipeline;
+
+        // power prime pipeline
+        const powerPrimePipeline = WGPUProvider.device.createComputePipeline({
+            label: "Power prime compute pipeline",
+            compute: {
+                module: shaderModule,
+                entryPoint: "powerPrime"
+            },
+            layout: pipelineLayout
+        });
+        GPUOperations.powerPrimePipeline = powerPrimePipeline;
+
+        // leaky ReLU prime pipeline
+        const leakyReLUPrimePipeline = WGPUProvider.device.createComputePipeline({
+            label: "leaky ReLU prime compute pipeline",
+            compute: {
+                module: shaderModule,
+                entryPoint: "leakyReLUPrime"
+            },
+            layout: pipelineLayout
+        });
+        GPUOperations.leakyReLUPrimePipeline = leakyReLUPrimePipeline;
 
         return Promise.resolve(true);
     }
@@ -505,6 +559,49 @@ export class GPUOperations {
 
         const bindGroup = GPUOperations.createBindGroup("elem-wise multiplication", tensor, other.gpuBuffer, res.gpuBuffer);
         GPUOperations.doComputePass("elem-wise multiplication", GPUOperations.elemWiseMulPipeline!, bindGroup, tensor.shape);
+        return res;
+    }
+
+    static ReLUPrime(tensor: Tensor): Tensor {
+        if (!WGPUProvider.device) {
+            throw new Error("WebGPU provider not setup");
+        }
+
+        const res = new Tensor(tensor.length, tensor.shape, "", tensor.requiresGrad, "wgpu");
+        WGPUProvider.device!.queue.writeBuffer(GPUOperations.inputShapeBuffer!, 0, new Uint32Array(tensor.shape));
+
+        const bindGroup = GPUOperations.createBindGroup("ReLU prime", tensor, null, res.gpuBuffer);
+        GPUOperations.doComputePass("ReLU prime", GPUOperations.ReLUPrimePipeline!, bindGroup, tensor.shape);
+        return res;
+    }
+
+    static powerPrime(tensor: Tensor, power: number): Tensor {
+        if (!WGPUProvider.device) {
+            throw new Error("WebGPU provider not setup");
+        }
+
+        const res = new Tensor(tensor.length, tensor.shape, "", tensor.requiresGrad, "wgpu");
+        WGPUProvider.device!.queue.writeBuffer(GPUOperations.inputShapeBuffer!, 0, new Uint32Array(tensor.shape));
+        WGPUProvider.device!.queue.writeBuffer(GPUOperations.otherShapeBuffer!, 0, new Uint32Array([1, 1]));
+
+        const powerBuffer = GPUOperations.createScalarBuffer("power prime", power);
+        const bindGroup = GPUOperations.createBindGroup("power prime", tensor, powerBuffer, res.gpuBuffer);
+        GPUOperations.doComputePass("power prime", GPUOperations.powerPrimePipeline!, bindGroup, tensor.shape);
+        return res;
+    }
+
+    static leakyReLUPrime(tensor: Tensor, alpha: number): Tensor {
+        if (!WGPUProvider.device) {
+            throw new Error("WebGPU provider not setup");
+        }
+
+        const res = new Tensor(tensor.length, tensor.shape, "", tensor.requiresGrad, "wgpu");
+        WGPUProvider.device!.queue.writeBuffer(GPUOperations.inputShapeBuffer!, 0, new Uint32Array(tensor.shape));
+        WGPUProvider.device!.queue.writeBuffer(GPUOperations.otherShapeBuffer!, 0, new Uint32Array([1, 1]));
+
+        const alphaBuffer = GPUOperations.createScalarBuffer("leaky ReLU prime", alpha);
+        const bindGroup = GPUOperations.createBindGroup("leaky ReLU prime", tensor, alphaBuffer, res.gpuBuffer);
+        GPUOperations.doComputePass("leaky ReLU prime", GPUOperations.leakyReLUPrimePipeline!, bindGroup, tensor.shape);
         return res;
     }
 }

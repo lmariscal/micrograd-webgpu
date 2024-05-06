@@ -6,6 +6,7 @@ type Device = "cpu" | "wgpu";
 // ~TODO: Actually make this Tensor class a n-dim Tensor rather than just a 2D tensor~ (Not a goal of this project)
 export class Tensor {
     public static defaultDevice: Device = "cpu";
+    public static debugMode: boolean = false;
 
     private _label: string;
     private _device: Device;
@@ -13,12 +14,12 @@ export class Tensor {
     private _shape: Array<number>; // RxC
     private _length: number;
     private _requiresGrad: boolean;
-    private _childen: Array<Tensor>;
+    private _children: Array<Tensor>;
     private _grad?: Tensor;
+    private _backward?: Function;
 
     // add backward()
     // call backward()
-    // impl element wise mat mul
 
     set label(label: string) {
         this._label = label;
@@ -56,6 +57,7 @@ export class Tensor {
         if (this._device == "cpu") {
             return this._data as Array<number>;
         }
+        // I don't wanna do data async
         throw new Error("Can only get data from CPU Tensors");
     }
 
@@ -77,6 +79,23 @@ export class Tensor {
         }
 
         throw new Error("Invalid device");
+    }
+
+    randomize(): void {
+        if (this._device == "cpu") {
+            this._data = (this._data as Array<number>).map(() => Math.random());
+        } else {
+            throw new Error("TODO WGPU");
+        }
+    }
+
+    zeroGrad(): void {
+        if (this._requiresGrad) {
+            this._grad = new Tensor(this.length, this._shape, this.label + " grad", false, this._device);
+            for (let child of this._children) {
+                child.zeroGrad();
+            }
+        }
     }
 
     /**
@@ -126,10 +145,10 @@ export class Tensor {
         this._label = label;
         this._device = "cpu";
         this._requiresGrad = requiresGrad;
-        this._childen = [];
+        this._children = [];
 
         if (requiresGrad) {
-            this._grad = new Tensor(this._data.length, this._shape, this.label + "_grad", false, device);
+            this._grad = new Tensor(this._data.length, this._shape, this.label + " grad", false, device);
         }
 
         if (this._shape.length == 1) {
@@ -211,12 +230,25 @@ export class Tensor {
             throw new Error("Invalid device");
         }
 
-        this._childen.push(res);
+        res._children.push(this);
         if (other instanceof Tensor) {
-            other._childen.push(res);
-            res.label = `(* ${this.label} ${other.label})`;
+            res._children.push(other);
+            if (Tensor.debugMode) {
+                res.label = `(* ${this.label} ${other.label})`;
+            }
+
+            res._backward = () => {
+                this._grad = res.grad.mul(other.transpose());
+                other._grad = this.transpose().mul(res.grad);
+            };
         } else {
-            res.label = `(* ${this.label} ${other})`;
+            if (Tensor.debugMode) {
+                res.label = `(* ${this.label} ${other})`;
+            }
+
+            res._backward = () => {
+                this._grad = res.grad.mul(other);
+            };
         }
         return res;
     }
@@ -260,12 +292,25 @@ export class Tensor {
             throw new Error("Invalid device");
         }
 
-        this._childen.push(res);
+        res._children.push(this);
         if (other instanceof Tensor) {
-            other._childen.push(res);
-            res.label = `(+ ${this.label} ${other.label})`;
+            res._children.push(other);
+            if (Tensor.debugMode) {
+                res.label = `(+ ${this.label} ${other.label})`;
+            }
+
+            res._backward = () => {
+                this._grad = res.grad;
+                other._grad = res.grad;
+            };
         } else {
-            res.label = `(+ ${this.label} ${other})`;
+            if (Tensor.debugMode) {
+                res.label = `(+ ${this.label} ${other})`;
+            }
+
+            res._backward = () => {
+                this._grad = res.grad;
+            };
         }
         return res;
     }
@@ -285,8 +330,18 @@ export class Tensor {
             throw new Error("Invalid device");
         }
 
-        this._childen.push(res);
-        res.label = `(ReLU ${this.label})`;
+        res._children.push(this);
+        if (Tensor.debugMode) {
+            res.label = `(ReLU ${this.label})`;
+        }
+
+        res._backward = () => {
+            if (this._device == "cpu") {
+                this._grad = CPUOperations.ReLUPrime(this).elemWiseMul(res.grad);
+            } else if (this._device == "wgpu") {
+                this._grad = GPUOperations.ReLUPrime(this).elemWiseMul(res.grad);
+            }
+        };
         return res;
     }
 
@@ -306,8 +361,18 @@ export class Tensor {
             throw new Error("Invalid device");
         }
 
-        this._childen.push(res);
-        res.label = `(LeakyReLU ${this.label})`;
+        res._children.push(this);
+        if (Tensor.debugMode) {
+            res.label = `(LeakyReLU ${this.label})`;
+        }
+
+        res._backward = () => {
+            if (this._device == "cpu") {
+                this._grad = CPUOperations.leakyReLUPrime(this, alpha).elemWiseMul(res.grad);
+            } else if (this._device == "wgpu") {
+                this._grad = GPUOperations.leakyReLUPrime(this, alpha).elemWiseMul(res.grad);
+            }
+        }
         return res;
     }
 
@@ -326,8 +391,10 @@ export class Tensor {
             throw new Error("Invalid device");
         }
 
-        this._childen.push(res);
-        res.label = `(T ${this.label})`;
+        res._children.push(this);
+        if (Tensor.debugMode) {
+            res.label = `(T ${this.label})`;
+        }
         return res;
     }
 
@@ -337,7 +404,7 @@ export class Tensor {
     * @param exponent Exponent to raise the Tensor to
     * @returns Tensor with the elements raised to the exponent
     */
-    power(exponent: number): Tensor {
+    pow(exponent: number): Tensor {
         let res: Tensor;
         if (this.device == "cpu") {
             res = CPUOperations.power(this, exponent);
@@ -347,29 +414,46 @@ export class Tensor {
             throw new Error("Invalid device");
         }
 
-        this._childen.push(res);
-        res.label = `(^ ${this.label} ${exponent})`;
+        res._children.push(this);
+        if (Tensor.debugMode) {
+            res.label = `(^ ${this.label} ${exponent})`;
+        }
+
+        res._backward = () => {
+            if (this._device == "cpu") {
+                this._grad = CPUOperations.powerPrime(this, exponent).elemWiseMul(res.grad);
+            } else if (this._device == "wgpu") {
+                this._grad = GPUOperations.powerPrime(this, exponent).elemWiseMul(res.grad);
+            }
+        };
         return res;
     }
 
     /**
     * Element wise multiplication of two Tensors
     *
-    * @param tensor Tensor to multiply against
+    * @param other Tensor to multiply against
     * @returns Tensor with the element wise multiplication of the two Tensors
     * */
-    elemWiseMul(tensor: Tensor): Tensor {
+    elemWiseMul(other: Tensor): Tensor {
         let res: Tensor;
         if (this.device == "cpu") {
-            res = CPUOperations.elemWiseMul(this, tensor);
+            res = CPUOperations.elemWiseMul(this, other);
         } else if (this.device == "wgpu") {
-            res = GPUOperations.elemWiseMul(this, tensor);
+            res = GPUOperations.elemWiseMul(this, other);
         } else {
             throw new Error("Invalid device");
         }
 
-        this._childen.push(res);
-        res.label = `(*e ${this.label} ${tensor.label})`;
+        res._children.push(this);
+        if (Tensor.debugMode) {
+            res.label = `(*e ${this.label} ${other.label})`;
+        }
+
+        res._backward = () => {
+            this._grad = res.grad.elemWiseMul(other);
+            other._grad = res.grad.elemWiseMul(this);
+        };
         return res;
     }
 
@@ -381,6 +465,10 @@ export class Tensor {
     toGPU(): void {
         this._device = "wgpu";
         this._data = WGPUProvider.moveTensorDataToGPU(this);
+
+        if (this._requiresGrad) {
+            this._grad!.toGPU();
+        }
     }
 
     /**
@@ -392,7 +480,31 @@ export class Tensor {
         if (this._device == "wgpu") {
             this._data = Array.from(await WGPUProvider.copyTensorDataToCPU(this));
             this._device = "cpu";
+
+            if (this._requiresGrad) {
+                await this._grad!.toCPU();
+            }
         }
+    }
+
+    /**
+    * Duplicate the Tensor, creating a new Tensor with the same data
+    *
+    * @returns New Tensor with the same data
+    */
+    copy(): Tensor {
+        let cpy: Tensor;
+        if (this._device == "cpu") {
+            cpy = new Tensor(this._data as Array<number>, this._shape, this.label, this._requiresGrad, this._device);
+        } else {
+            cpy = WGPUProvider.duplicateTensor(this);
+        }
+
+        cpy._children = this._children;
+        if (this._requiresGrad) {
+            cpy._grad = this.grad.copy();
+        }
+        return cpy;
     }
 
     /**
@@ -420,9 +532,54 @@ export class Tensor {
     descendancy(): Array<string> {
         let des = [];
         des.push(this.label);
-        this._childen.forEach((child) => {
+        this._children.forEach((child) => {
             des.push(...child.descendancy());
         });
         return des;
+    }
+
+    backward(): void {
+        if (!this.requiresGrad) {
+            throw new Error("Tensor does not require gradient");
+        }
+        this._grad = this._grad!.add(1);
+
+        let topo: Array<Tensor> = [];
+        let visited = new Set<Tensor>();
+
+        let dfs = (node: Tensor) => {
+            visited.add(node);
+            node._children.forEach((child) => {
+                if (!visited.has(child)) {
+                    dfs(child);
+                }
+            });
+            topo.push(node);
+        };
+
+        dfs(this);
+        topo.reverse();
+
+        for (let t of topo) {
+            // console.group(t.label + " requires grad: " + t.requiresGrad);
+            // console.log("val:\n" + t.pretty());
+            if (t._backward) {
+                t._backward();
+            }
+            // if (t.requiresGrad) {
+            //     console.log("grad:\n" + t.grad.pretty());
+            // }
+            // console.groupEnd();
+        }
+
+        // console.log("============");
+
+        // console.group("Backward pass");
+        // for (let t of topo) {
+        //     if (!t.requiresGrad) continue;
+        //     await t.toCPU();
+        //     console.log(t.label, "\n" + t.grad.pretty());
+        // }
+        // console.groupEnd();
     }
 }

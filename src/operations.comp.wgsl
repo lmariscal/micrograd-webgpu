@@ -84,7 +84,7 @@ fn leakyReLU(
         return;
     }
     let index = global_id.y + (global_id.x * inputShape[1]);
-    result[index] = max(0.1 * input[index], input[index]);
+    result[index] = max(other[0] * input[index], input[index]);
 }
 
 @compute @workgroup_size(8, 8)
@@ -119,4 +119,45 @@ fn elemWiseMul(
     }
     let index = global_id.y + (global_id.x * inputShape[1]);
     result[index] = input[index] * other[index];
+}
+
+@compute @workgroup_size(8, 8)
+fn ReLUPrime(
+    @builtin(global_invocation_id) global_id: vec3u
+) {
+    if (global_id.x >= inputShape[0] || global_id.y >= inputShape[1]) {
+        return;
+    }
+    let index = global_id.y + (global_id.x * inputShape[1]);
+    if (input[index] > 0.0) {
+        result[index] = 1.0;
+    } else {
+        result[index] = 0.0;
+    }
+}
+
+@compute @workgroup_size(8, 8)
+fn powerPrime(
+    @builtin(global_invocation_id) global_id: vec3u
+) {
+    if (global_id.x >= inputShape[0] || global_id.y >= inputShape[1]) {
+        return;
+    }
+    let index = global_id.y + (global_id.x * inputShape[1]);
+    result[index] = other[0] * pow(input[index], other[0] - 1.0);
+}
+
+@compute @workgroup_size(8, 8)
+fn leakyReLUPrime(
+    @builtin(global_invocation_id) global_id: vec3u
+) {
+    if (global_id.x >= inputShape[0] || global_id.y >= inputShape[1]) {
+        return;
+    }
+    let index = global_id.y + (global_id.x * inputShape[1]);
+    if (input[index] > 0.0) {
+        result[index] = 1.0;
+    } else {
+        result[index] = other[0];
+    }
 }

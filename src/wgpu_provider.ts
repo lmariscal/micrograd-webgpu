@@ -50,7 +50,7 @@ export class WGPUProvider {
         const buffer = WGPUProvider.device.createBuffer({
             label: `tensor${tensor.label} buffer`,
             size: Float32Array.BYTES_PER_ELEMENT * tensor.length,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
             mappedAtCreation: true
         });
         {
@@ -96,6 +96,26 @@ export class WGPUProvider {
         buffer.unmap();
 
         return data;
+    }
+
+    /**
+    * Duplicate the Tensor
+    * 
+    * Do not use this function directly. Use the `Tensor.copy()` method instead.
+    *
+    * @param tensor Tensor to duplicate
+    * @returns New Tensor with the same data as the input Tensor
+    */
+    static duplicateTensor(tensor: Tensor): Tensor {
+        if (!WGPUProvider.device) {
+            throw new Error("WebGPU provider not setup");
+        }
+
+        const t = new Tensor(tensor.length, tensor.shape, tensor.label, tensor.requiresGrad, tensor.device);
+        const encoder = WGPUProvider.device.createCommandEncoder();
+        encoder.copyBufferToBuffer(tensor.gpuBuffer, 0, t.gpuBuffer, 0, tensor.length * Float32Array.BYTES_PER_ELEMENT);
+        WGPUProvider.device.queue.submit([encoder.finish()]);
+        return t;
     }
 }
 
