@@ -373,7 +373,7 @@ export class Tensor {
 
             res._backward = () => {
                 this._grad = this._grad!.add(res.grad);
-                other._grad = other._grad!.add(res.grad.mul(-1));
+                other._grad = other._grad!.add(res.grad);
             };
         } else {
             if (Tensor.debugMode) {

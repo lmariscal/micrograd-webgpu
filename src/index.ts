@@ -26,7 +26,7 @@ async function main() {
 
     let model = new Model([2, 2, 1]);
 
-    for (let i = 0; i < 10000; i++) {
+    for (let i = 0; i < 1000; i++) {
         GPUOperations.computePassCount = 0;
         let loss = new Tensor([0], [1], "loss");
 
@@ -38,14 +38,14 @@ async function main() {
             let sampleLoss = y.sub(desired).pow(2);
             loss = loss.add(sampleLoss);
         }
-        loss.mul(0.25);
+        loss = loss.mul(0.25);
         loss.backward();
 
         if (loss.device == "wgpu") {
             await loss.toCPU();
         }
 
-        if (i % 1000 == 0) {
+        if (i % 100 == 0) {
             console.group("i:", i);
             console.log("loss:", loss.pretty());
             let params = model.params;
