@@ -16,50 +16,60 @@ let and_train = [
     { input: [1, 1], output: [1] }
 ];
 
+let continueTraining = false;
+
 async function main() {
     xor_train;
     and_train;
     Tensor.defaultDevice = "cpu";
     Tensor.debugMode = false;
 
-    let model = new Model([1, 1]);
-    let desired = new Tensor([13], [1], "desired");
-    let x = new Tensor([5], [1], "x");
+    let model = new Model([2, 2, 1]);
 
-    let params = model.params;
-    for (let p of params) {
-        console.log(p.label, p.pretty());
-    }
-
-    for (let i = 0; i < 1000; i++) {
-        console.log("i:", i);
-
+    for (let i = 0; i < 10000; i++) {
         GPUOperations.computePassCount = 0;
-        let y = model.forward(x);
-        let los = y.sub(desired).pow(2);
-        los.backward();
+        let loss = new Tensor([0], [1], "loss");
 
-        let lr = 0.001;
+        for (let sample of xor_train) {
+            let x = new Tensor(sample.input, [1, 2]);
+            let desired = new Tensor(sample.output, [1, 1]);
+
+            let y = model.forward(x);
+            let sampleLoss = y.sub(desired).pow(2);
+            loss = loss.add(sampleLoss);
+        }
+        loss.mul(0.25);
+        loss.backward();
+
+        if (loss.device == "wgpu") {
+            await loss.toCPU();
+        }
+
+        if (i % 1000 == 0) {
+            console.group("i:", i);
+            console.log("loss:", loss.pretty());
+            let params = model.params;
+            for (let p of params) {
+                // console.log(p.label + "grad", p.grad.pretty());
+            }
+            console.groupEnd();
+        }
+
+        let lr = 0.1;
         model.learn(lr);
 
         model.zeroGrad();
-        console.log("computePassCount:", GPUOperations.computePassCount);
     }
 
-    params = model.params;
-    for (let p of params) {
-        console.log(p.label, p.pretty());
+    for (let sample of xor_train) {
+        let x = new Tensor(sample.input, [1, 2]);
+        let y = model.forward(x);
+        if (y.device == "wgpu") {
+            await x.toCPU();
+            await y.toCPU();
+        }
+        console.log("x:", x.pretty(), "y:", y.data[0] > 0.5 ? 1 : 0, "y:", y.pretty());
     }
-
-    let y = model.forward(x);
-    let loss = y.sub(desired).pow(2);
-    loss.backward();
-    if (loss.device == "wgpu") {
-        await loss.toCPU();
-        await y.toCPU();
-    }
-    console.log("loss:", loss.pretty());
-    console.log("y:", y.pretty());
 }
 
 main();

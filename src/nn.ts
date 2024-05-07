@@ -12,7 +12,7 @@ class Layer {
     forward(x: Tensor): Tensor {
         let xw = x.mul(this.w);
         let xwb = xw.add(this.b);
-        return xwb.ReLU();
+        return xwb.leakyReLU();
     }
 }
 
@@ -32,7 +32,6 @@ export class Model {
         this.layers = [];
         for (let i = 0; i < shape.length - 1; i++) {
             let w = new Tensor(shape[i] * shape[i + 1], [shape[i], shape[i + 1]], `w${i}`);
-            console.log(w.label);
             w.randomize();
             let b = new Tensor(shape[i + 1], [1, shape[i + 1]], `b${i}`);
             b.randomize();

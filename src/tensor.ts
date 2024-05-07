@@ -644,6 +644,7 @@ export class Tensor {
             if (t._backward) {
                 t._backward();
             }
+            t._backward = undefined;
         }
     }
 }
