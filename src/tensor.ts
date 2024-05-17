@@ -85,16 +85,21 @@ export class Tensor {
         return this._children;
     }
 
+    /**
+    * Fill the current tensor with ramdom values
+    */
     randomize(): void {
         this._data = new Array<number>(this.length).fill(0).map(() => Math.random());
         if (this._device == "wgpu") {
             this._device = "cpu";
             this._data = WGPUProvider.moveTensorDataToGPU(this);
             this._device = "wgpu";
-
         }
     }
 
+    /**
+    * Zero the gradient of the Tensor and its children
+    */
     zeroGrad(): void {
         if (this._requiresGrad) {
             this._grad = new Tensor(this.length, this._shape, this.label + " grad", false, this._device);
